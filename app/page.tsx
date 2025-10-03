@@ -13,6 +13,8 @@ import {
   BookOpen,
   Minus,
   Plus,
+  Menu,
+  X,
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -46,6 +48,7 @@ export default function Page() {
   const [content, setContent] = useState<string>("")
   const [loading, setLoading] = useState(false)
   const [fontSize, setFontSize] = useState<"sm" | "base" | "lg" | "xl">("base")
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
     if (isDark) document.documentElement.classList.add("dark")
@@ -77,6 +80,7 @@ export default function Page() {
       setContent(`# Error\nCould not load file: ${path}`)
     } finally {
       setLoading(false)
+      setSidebarOpen(false) // auto close sidebar on mobile after selecting
     }
   }
 
@@ -97,12 +101,23 @@ export default function Page() {
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-gray-300 dark:border-gray-700 bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#128C7E]/20 text-[#128C7E] border border-[#128C7E]">
-              <BookOpen className="h-4 w-4" />
-            </div>
-            <span className="text-lg font-semibold">Developer Handbook</span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-label="Toggle menu"
+            >
+              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+            <Link href="/" className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#128C7E]/20 text-[#128C7E] border border-[#128C7E]">
+                <BookOpen className="h-4 w-4" />
+              </div>
+              <span className="text-lg font-semibold">Developer Handbook</span>
+            </Link>
+          </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" onClick={decreaseFont} title="Decrease font">
               <Minus className="h-4 w-4" />
@@ -116,27 +131,23 @@ export default function Page() {
       </header>
 
       <div className="mx-auto flex w-full max-w-6xl">
-        {/* Sidebar */}
-        <aside className="w-64 border-r border-gray-300 dark:border-gray-700 p-4 overflow-y-auto">
-          <h2 className="text-sm font-semibold mb-3 text-gray-600 dark:text-gray-300">Files</h2>
-          <ul className="space-y-1">
-            {files.map((f) => (
-              <li key={f.path}>
-                <button
-                  onClick={() => loadFile(f.path)}
-                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium
-                    ${currentFile === f.path
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-muted hover:text-foreground"
-                    }`}
-                >
-                  <FileText className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{f.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+        {/* Sidebar for desktop */}
+        <aside className="hidden md:block w-64 border-r border-gray-300 dark:border-gray-700 p-4 overflow-y-auto">
+          <Sidebar files={files} currentFile={currentFile} loadFile={loadFile} />
         </aside>
+
+        {/* Sidebar overlay for mobile */}
+        {sidebarOpen && (
+          <div className="fixed inset-0 z-50 flex">
+            <div className="w-64 bg-background border-r border-gray-300 dark:border-gray-700 p-4 overflow-y-auto">
+              <Sidebar files={files} currentFile={currentFile} loadFile={loadFile} />
+            </div>
+            <div
+              className="flex-1 bg-black/40"
+              onClick={() => setSidebarOpen(false)}
+            />
+          </div>
+        )}
 
         {/* Content */}
         <main className="flex-1 p-6 overflow-y-auto">
@@ -159,6 +170,40 @@ export default function Page() {
         </main>
       </div>
     </div>
+  )
+}
+
+/* ---------- Sidebar ---------- */
+function Sidebar({
+  files,
+  currentFile,
+  loadFile,
+}: {
+  files: RepoFile[]
+  currentFile: string | null
+  loadFile: (path: string) => void
+}) {
+  return (
+    <>
+      <h2 className="text-sm font-semibold mb-3 text-gray-600 dark:text-gray-300">Files</h2>
+      <ul className="space-y-1">
+        {files.map((f) => (
+          <li key={f.path}>
+            <button
+              onClick={() => loadFile(f.path)}
+              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium
+                ${currentFile === f.path
+                  ? "bg-accent text-accent-foreground"
+                  : "hover:bg-muted hover:text-foreground"
+                }`}
+            >
+              <FileText className="h-4 w-4 shrink-0" />
+              <span className="truncate">{f.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
 
