@@ -11,6 +11,8 @@ import {
   Sun,
   FileText,
   BookOpen,
+  Folder,
+  FolderOpen,
   Minus,
   Plus,
   Menu,
@@ -20,9 +22,8 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeRaw from "rehype-raw"
 import rehypeHighlight from "rehype-highlight"
-import "highlight.js/styles/github-dark.css" // syntax highlight theme
+import "highlight.js/styles/github-dark.css"
 
-// ---------- Font ----------
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
@@ -32,8 +33,9 @@ const plusJakarta = Plus_Jakarta_Sans({
 type RepoFile = {
   name: string
   path: string
-  download_url: string
-  type: string
+  download_url: string | null
+  type: "file" | "dir"
+  children?: RepoFile[]
 }
 
 const REPO = "nysa-garage/developer-handbook"
@@ -55,18 +57,33 @@ export default function Page() {
     else document.documentElement.classList.remove("dark")
   }, [isDark])
 
-  // Fetch repo files on mount
   useEffect(() => {
-    async function fetchFiles() {
-      const res = await fetch(API_URL + "?ref=" + BRANCH)
+    async function fetchFilesRecursive(path = ""): Promise<RepoFile[]> {
+      const res = await fetch(API_URL + path + "?ref=" + BRANCH)
       const data = await res.json()
-      if (Array.isArray(data)) {
-        const mdFiles = data.filter((f) => f.name.endsWith(".md"))
-        setFiles(mdFiles)
-        if (mdFiles.length > 0) loadFile(mdFiles[0].path)
-      }
+      if (!Array.isArray(data)) return []
+      const results: RepoFile[] = await Promise.all(
+        data.map(async (item) => {
+          if (item.type === "dir") {
+            const children = await fetchFilesRecursive(item.path)
+            return { ...item, children }
+          } else {
+            return item
+          }
+        })
+      )
+      return results
     }
-    fetchFiles()
+
+    async function init() {
+      const structure = await fetchFilesRecursive()
+      setFiles(structure)
+      // auto-load first file found
+      const firstFile = findFirstMarkdown(structure)
+      if (firstFile) loadFile(firstFile.path)
+    }
+
+    init()
   }, [])
 
   async function loadFile(path: string) {
@@ -76,28 +93,40 @@ export default function Page() {
       const res = await fetch(RAW_URL + path)
       const text = await res.text()
       setContent(text)
-    } catch (err) {
+    } catch {
       setContent(`# Error\nCould not load file: ${path}`)
     } finally {
       setLoading(false)
-      setSidebarOpen(false) // auto close sidebar on mobile after selecting
+      setSidebarOpen(false)
     }
   }
 
-  // font size handlers
+  function findFirstMarkdown(tree: RepoFile[]): RepoFile | null {
+    for (const node of tree) {
+      if (node.type === "file" && node.name.endsWith(".md")) return node
+      if (node.type === "dir" && node.children) {
+        const found = findFirstMarkdown(node.children)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
   function increaseFont() {
-    setFontSize((prev) =>
-      prev === "sm" ? "base" : prev === "base" ? "lg" : prev === "lg" ? "xl" : "xl"
+    setFontSize((p) =>
+      p === "sm" ? "base" : p === "base" ? "lg" : p === "lg" ? "xl" : "xl"
     )
   }
   function decreaseFont() {
-    setFontSize((prev) =>
-      prev === "xl" ? "lg" : prev === "lg" ? "base" : prev === "base" ? "sm" : "sm"
+    setFontSize((p) =>
+      p === "xl" ? "lg" : p === "lg" ? "base" : p === "base" ? "sm" : "sm"
     )
   }
 
   return (
-    <div className={`${plusJakarta.className} min-h-screen bg-[#fdfdf8] dark:bg-[#111b21]`}>
+    <div
+      className={`${plusJakarta.className} min-h-screen bg-[#fdfdf8] dark:bg-[#111b21]`}
+    >
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-gray-300 dark:border-gray-700 bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4">
@@ -119,10 +148,10 @@ export default function Page() {
             </Link>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={decreaseFont} title="Decrease font">
+            <Button variant="outline" size="icon" onClick={decreaseFont}>
               <Minus className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="icon" onClick={increaseFont} title="Increase font">
+            <Button variant="outline" size="icon" onClick={increaseFont}>
               <Plus className="h-4 w-4" />
             </Button>
             <ThemeSwitch isDark={isDark} onToggle={() => setIsDark((v) => !v)} />
@@ -142,10 +171,7 @@ export default function Page() {
             <div className="w-64 bg-background border-r border-gray-300 dark:border-gray-700 p-4 overflow-y-auto">
               <Sidebar files={files} currentFile={currentFile} loadFile={loadFile} />
             </div>
-            <div
-              className="flex-1 bg-black/40"
-              onClick={() => setSidebarOpen(false)}
-            />
+            <div className="flex-1 bg-black/40" onClick={() => setSidebarOpen(false)} />
           </div>
         )}
 
@@ -154,7 +180,7 @@ export default function Page() {
           <Card className="rounded-2xl border border-gray-300 dark:border-gray-700 shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg font-semibold">
-                {currentFile ? currentFile : "Select a file"}
+                {currentFile || "Select a file"}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -184,30 +210,79 @@ function Sidebar({
   loadFile: (path: string) => void
 }) {
   return (
-    <>
+    <div>
       <h2 className="text-sm font-semibold mb-3 text-gray-600 dark:text-gray-300">Files</h2>
       <ul className="space-y-1">
-        {files.map((f) => (
-          <li key={f.path}>
-            <button
-              onClick={() => loadFile(f.path)}
-              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium
-                ${currentFile === f.path
-                  ? "bg-accent text-accent-foreground"
-                  : "hover:bg-muted hover:text-foreground"
-                }`}
-            >
-              <FileText className="h-4 w-4 shrink-0" />
-              <span className="truncate">{f.name}</span>
-            </button>
-          </li>
+        {files.map((item) => (
+          <SidebarItem
+            key={item.path}
+            item={item}
+            currentFile={currentFile}
+            loadFile={loadFile}
+          />
         ))}
       </ul>
-    </>
+    </div>
   )
 }
 
-/* ---------- Markdown renderer ---------- */
+/* ---------- Sidebar Item (recursive) ---------- */
+function SidebarItem({
+  item,
+  currentFile,
+  loadFile,
+}: {
+  item: RepoFile
+  currentFile: string | null
+  loadFile: (path: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  if (item.type === "dir") {
+    return (
+      <li>
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-2 w-full rounded-md px-3 py-2 text-sm font-medium hover:bg-muted hover:text-foreground"
+        >
+          {open ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
+          <span className="truncate">{item.name}</span>
+        </button>
+        {open && item.children && (
+          <ul className="ml-4 mt-1 border-l border-gray-200 dark:border-gray-700 pl-2 space-y-1">
+            {item.children.map((child) => (
+              <SidebarItem
+                key={child.path}
+                item={child}
+                currentFile={currentFile}
+                loadFile={loadFile}
+              />
+            ))}
+          </ul>
+        )}
+      </li>
+    )
+  }
+
+  if (!item.name.endsWith(".md")) return null
+  return (
+    <li>
+      <button
+        onClick={() => loadFile(item.path)}
+        className={`flex items-center gap-2 w-full rounded-md px-3 py-2 text-sm font-medium ${
+          currentFile === item.path
+            ? "bg-accent text-accent-foreground"
+            : "hover:bg-muted hover:text-foreground"
+        }`}
+      >
+        <FileText className="h-4 w-4 shrink-0" />
+        <span className="truncate">{item.name}</span>
+      </button>
+    </li>
+  )
+}
+
+/* ---------- Markdown Renderer ---------- */
 function Markdown({ text, fontSize }: { text: string; fontSize: "sm" | "base" | "lg" | "xl" }) {
   const sizeClass =
     fontSize === "sm"
@@ -225,10 +300,7 @@ function Markdown({ text, fontSize }: { text: string; fontSize: "sm" | "base" | 
       prose-code:bg-gray-200 dark:prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded
       prose-pre:rounded-xl prose-pre:bg-gray-900/90 prose-pre:text-gray-100 prose-img:rounded-xl`}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, rehypeHighlight]}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, rehypeHighlight]}>
         {text}
       </ReactMarkdown>
     </article>
