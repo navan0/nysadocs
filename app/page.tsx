@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import Head from "next/head"
@@ -46,7 +46,7 @@ const BRANCH = "main"
 const API_URL = `https://api.github.com/repos/${REPO}/contents/`
 const RAW_URL = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/`
 
-export default function Page() {
+function PageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -67,6 +67,7 @@ export default function Page() {
     else document.documentElement.classList.remove("dark")
   }, [isDark])
 
+  // Load repo structure
   useEffect(() => {
     async function fetchFilesRecursive(path = ""): Promise<RepoFile[]> {
       const res = await fetch(API_URL + path + "?ref=" + BRANCH)
@@ -91,11 +92,11 @@ export default function Page() {
         if (firstFile) loadFile(firstFile.path)
       }
     }
-
     init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Auto-load from shared link
+  // Auto-load file from URL
   useEffect(() => {
     if (fileFromURL) loadFile(fileFromURL)
   }, [fileFromURL])
@@ -109,7 +110,7 @@ export default function Page() {
       const text = await res.text()
       setContent(text)
 
-      // Author info
+      // Fetch author info
       const commitRes = await fetch(
         `https://api.github.com/repos/${REPO}/commits?path=${path}&per_page=1`
       )
@@ -158,7 +159,7 @@ export default function Page() {
     const params = new URLSearchParams(searchParams)
     if (blogMode) params.delete("mode")
     else params.set("mode", "blog")
-    router.push("?" + params.toString())
+    router.push(`/?${params.toString()}`)
   }
 
   return (
@@ -382,7 +383,6 @@ function Markdown({ text, fontSize }: { text: string; fontSize: "sm" | "base" | 
       prose-p:leading-relaxed prose-img:rounded-xl`}
     >
       <style jsx global>{`
-        /* Full code block */
         pre {
           background: #1e1f22;
           border-radius: 1rem;
@@ -405,8 +405,6 @@ function Markdown({ text, fontSize }: { text: string; fontSize: "sm" | "base" | 
           display: block;
           white-space: pre;
         }
-
-        /* Inline code */
         code:not(pre code) {
           background: #f3f4f6;
           color: #111827;
@@ -419,14 +417,12 @@ function Markdown({ text, fontSize }: { text: string; fontSize: "sm" | "base" | 
           color: #f5f5f5;
         }
       `}</style>
-
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, rehypeHighlight]}>
         {text}
       </ReactMarkdown>
     </article>
   )
 }
-
 
 /* ---------- Theme Switch ---------- */
 function ThemeSwitch({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
@@ -440,5 +436,14 @@ function ThemeSwitch({ isDark, onToggle }: { isDark: boolean; onToggle: () => vo
     >
       {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </Button>
+  )
+}
+
+/* ---------- Export with Suspense ---------- */
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-gray-500">Loading...</div>}>
+      <PageContent />
+    </Suspense>
   )
 }
