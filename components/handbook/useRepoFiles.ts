@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react"
 
-const REPO = "nysa-garage/developer-handbook"
+const ORG = "nysa-garage"
+const REPO = "developer-handbook"
 const BRANCH = "main"
-const API_URL = `https://api.github.com/repos/${REPO}/contents/`
 
 export function useRepoFiles() {
   const [files, setFiles] = useState<any[]>([])
@@ -10,11 +10,11 @@ export function useRepoFiles() {
 
   useEffect(() => {
     async function fetchFilesRecursive(path = ""): Promise<any[]> {
-      const res = await fetch(API_URL + path + "?ref=" + BRANCH)
+      const res = await fetch(`/api/github/repos/${ORG}/${REPO}/contents/${path}?ref=${BRANCH}`, { cache: "no-store" })
       const data = await res.json()
       if (!Array.isArray(data)) return []
       return Promise.all(
-        data.map(async (item) => {
+        data.map(async (item: any) => {
           if (item.type === "dir") {
             const children = await fetchFilesRecursive(item.path)
             return { ...item, children }
@@ -25,7 +25,7 @@ export function useRepoFiles() {
 
     async function init() {
       setLoading(true)
-      const structure = await fetchFilesRecursive()
+      const structure = await fetchFilesRecursive("")
       setFiles(structure)
       setLoading(false)
     }
